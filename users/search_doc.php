@@ -8,6 +8,10 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
+// ค่า ID ของผู้ใช้และแผนกปัจจุบัน
+$my_dept_id = $_SESSION['department_id'];
+$my_user_id = $_SESSION['user_id'];
+
 // ----------------------------------------------------------------------
 // PHP สำหรับจัดการ AJAX Request
 // ----------------------------------------------------------------------
@@ -15,20 +19,31 @@ if (isset($_POST['action']) && $_POST['action'] == 'search_docs') {
     $search = $_POST['search'] ?? '';
     $type_id = $_POST['type_id'] ?? '';
     $status = $_POST['status'] ?? '';
-    $dept_id = $_POST['dept_id'] ?? ''; // [แก้ไข] รับค่าแผนกแทนเวลา
+    $dept_id = $_POST['dept_id'] ?? '';
     
-    // สร้างเงื่อนไข SQL
+    // สร้างเงื่อนไข SQL เริ่มต้น
     $where_sql = " WHERE 1=1 ";
     $params = [];
     $types = "";
 
-    // กรองตามคำค้นหา
+    // 1. เงื่อนไขการมองเห็น (Visibility Logic)
+    // ยกเว้นแผนก ID 1 (Admin) และ ID 2 (ธุรการสำนักปลัด) ที่สามารถเห็นได้ทั้งหมด
+    if (!in_array($my_dept_id, [1, 2])) {
+        // แผนกอื่น: เห็นเฉพาะที่ตนเองส่ง (sender_id) หรือ ส่งมาถึงแผนกตนเอง (to_department_id)
+        $where_sql .= " AND (d.sender_id = ? OR d.to_department_id = ?) ";
+        $params[] = $my_user_id;
+        $params[] = $my_dept_id;
+        $types .= "ii";
+    }
+
+    // 2. กรองตามคำค้นหา (เลขที่ภายใน, เลขที่ภายนอก, ชื่อเรื่อง)
     if (!empty($search)) {
-        $where_sql .= " AND (d.document_no LIKE ? OR d.title LIKE ?)";
+        $where_sql .= " AND (d.document_no LIKE ? OR d.external_no LIKE ? OR d.title LIKE ?)";
         $search_param = "%$search%";
         $params[] = $search_param;
         $params[] = $search_param;
-        $types .= "ss";
+        $params[] = $search_param;
+        $types .= "sss";
     }
 
     // กรองตามประเภท
@@ -52,7 +67,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'search_docs') {
         $types .= "i";
     }
 
-    // Query ข้อมูล (Join ตารางแผนกเพื่อแสดงชื่อแผนกด้วย)
+    // Query ข้อมูล (Join เพื่อเอาชื่อประเภทและชื่อแผนก)
     $sql = "SELECT d.*, t.type_name, dept.name as dept_name 
             FROM documents d 
             LEFT JOIN document_types t ON d.document_type_id = t.id 
@@ -67,22 +82,43 @@ if (isset($_POST['action']) && $_POST['action'] == 'search_docs') {
     $stmt->execute();
     $result = $stmt->get_result();
 
-    // สร้าง HTML ส่งกลับไป
+    // สร้าง HTML ส่งกลับไปที่ตาราง
     if ($result->num_rows > 0) {
         while ($row = $result->fetch_assoc()) {
-            $badges = ['pending' => 'bg-warning', 'process' => 'bg-info', 'success' => 'bg-success', 'cancel' => 'bg-danger'];
-            $texts = ['pending' => 'รอดำเนินการ', 'process' => 'รับเรื่องแล้ว', 'success' => 'เสร็จสิ้น', 'cancel' => 'ยกเลิก'];
+            // กำหนดสี Badge ตามสถานะ
+            $badges = [
+                'pending' => 'bg-warning text-dark', 
+                'process' => 'bg-info text-dark', 
+                'success' => 'bg-success', 
+                'cancel' => 'bg-danger'
+            ];
+            $texts = [
+                'pending' => 'รอดำเนินการ', 
+                'process' => 'รับเรื่องแล้ว', 
+                'success' => 'เสร็จสิ้น', 
+                'cancel' => 'ยกเลิก'
+            ];
             $status_badge = $badges[$row['status']] ?? 'bg-secondary';
             $status_text = $texts[$row['status']] ?? $row['status'];
             
             $date_th = date('d/m/Y', strtotime($row['created_at']));
             $dept_name = $row['dept_name'] ?? '-';
 
+            // เตรียมแสดงเลขที่ภายนอก (ถ้ามี)
+            $ext_no_html = '';
+            if (!empty($row['external_no'])) {
+                $ext_no_html = '<span class="badge bg-white text-muted border small ms-1" title="เลขที่หนังสือภายนอก"><i class="bi bi-box-arrow-in-right"></i> ' . htmlspecialchars($row['external_no']) . '</span>';
+            }
+
             echo '<tr class="align-middle">';
             echo '<td class="ps-4 text-muted small">' . $date_th . '</td>';
             echo '<td>';
-            echo '  <div class="fw-bold text-dark">' . htmlspecialchars($row['title']) . '</div>';
-            echo '  <span class="badge bg-light text-secondary border small">' . $row['document_no'] . '</span>';
+            // 3. ชื่อเรื่อง: ใช้ text-break และ min-width เพื่อให้ตัดคำสวยงาม
+            echo '  <div class="fw-bold text-dark text-break" style="min-width: 250px;">' . htmlspecialchars($row['title']) . '</div>';
+            echo '  <div class="mt-1 d-flex flex-wrap gap-1">';
+            echo '      <span class="badge bg-light text-secondary border small" title="เลขที่เอกสารภายใน">ภายใน: ' . htmlspecialchars($row['document_no']) . '</span>';
+            echo        $ext_no_html;
+            echo '  </div>';
             echo '</td>';
             echo '<td><span class="badge bg-light text-dark border">' . htmlspecialchars($row['type_name']) . '</span></td>';
             echo '<td><span class="text-muted small"><i class="bi bi-building"></i> ' . htmlspecialchars($dept_name) . '</span></td>';
@@ -95,14 +131,13 @@ if (isset($_POST['action']) && $_POST['action'] == 'search_docs') {
     } else {
         echo '<tr><td colspan="6" class="text-center py-5 text-muted"><i class="bi bi-search fs-1 d-block mb-3 opacity-25"></i> ไม่พบเอกสารตามเงื่อนไขที่ระบุ</td></tr>';
     }
-    exit(); // จบการทำงานของ AJAX
+    exit(); // จบการทำงาน AJAX
 }
 
 // ----------------------------------------------------------------------
-// หน้าจอ HTML (แสดงผลเมื่อเข้าหน้าเว็บปกติ)
+// ส่วนหน้าจอ HTML
 // ----------------------------------------------------------------------
 $types = $conn->query("SELECT * FROM document_types");
-// ดึงข้อมูลแผนก
 $depts = $conn->query("SELECT * FROM departments ORDER BY name ASC");
 ?>
 
@@ -120,6 +155,12 @@ $depts = $conn->query("SELECT * FROM departments ORDER BY name ASC");
         .main-content { padding: 30px; width: 100%; height: 100vh; overflow-y: auto; }
         .search-card { border: none; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
         .table-hover tbody tr:hover { background-color: #ffffff; box-shadow: 0 5px 15px rgba(0,0,0,0.03); transform: translateY(-1px); transition: all 0.2s; }
+        /* CSS สำหรับตัดคำในตาราง */
+        .text-break {
+            word-wrap: break-word;
+            word-break: break-word;
+            white-space: normal;
+        }
     </style>
 </head>
 <body>
@@ -134,10 +175,10 @@ $depts = $conn->query("SELECT * FROM departments ORDER BY name ASC");
                     <div class="card-body p-4">
                         <form id="searchForm" class="row g-3">
                             <div class="col-md-4">
-                                <label class="form-label fw-bold small text-muted">คำค้นหา</label>
+                                <label class="form-label fw-bold small text-muted">คำค้นหา (ภายใน / ภายนอก / เรื่อง)</label>
                                 <div class="input-group">
                                     <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                                    <input type="text" id="search_text" class="form-control border-start-0 ps-0" placeholder="ระบุเลขที่ หรือชื่อเรื่อง...">
+                                    <input type="text" id="search_text" class="form-control border-start-0 ps-0" placeholder="พิมพ์เลขที่เอกสาร หรือชื่อเรื่อง...">
                                 </div>
                             </div>
                             <div class="col-md-3">
@@ -178,18 +219,19 @@ $depts = $conn->query("SELECT * FROM departments ORDER BY name ASC");
                             <table class="table table-hover align-middle mb-0">
                                 <thead class="bg-light border-bottom">
                                     <tr>
-                                        <th class="ps-4 py-3" width="10%">วันที่</th>
-                                        <th class="py-3" width="30%">เรื่อง / เลขที่</th>
-                                        <th class="py-3" width="15%">ประเภท</th>
+                                        <th class="ps-4 py-3" width="12%">วันที่</th>
+                                        <th class="py-3" width="35%">เรื่อง / เลขที่</th>
+                                        <th class="py-3" width="13%">ประเภท</th>
                                         <th class="py-3" width="15%">แผนกปลายทาง</th>
-                                        <th class="py-3 text-center" width="15%">สถานะ</th>
+                                        <th class="py-3 text-center" width="10%">สถานะ</th>
                                         <th class="py-3 text-center" width="15%">จัดการ</th>
                                     </tr>
                                 </thead>
                                 <tbody id="resultsTable">
                                     <tr>
                                         <td colspan="6" class="text-center py-5 text-muted">
-                                            กำลังโหลดข้อมูล...
+                                            <div class="spinner-border text-primary mb-3" role="status"></div>
+                                            <div>กำลังโหลดข้อมูล...</div>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -207,7 +249,9 @@ $depts = $conn->query("SELECT * FROM departments ORDER BY name ASC");
     
     <script>
         $(document).ready(function() {
-            // ฟังก์ชันโหลดข้อมูล
+            let searchTimeout;
+
+            // ฟังก์ชันโหลดข้อมูลด้วย AJAX
             function loadDocuments() {
                 let search = $('#search_text').val();
                 let type_id = $('#search_type').val();
@@ -227,22 +271,27 @@ $depts = $conn->query("SELECT * FROM departments ORDER BY name ASC");
                     success: function(response) {
                         $('#resultsTable').html(response);
                         
+                        // ถ้าค้นหาแล้วไม่เจอ ให้แจ้งเตือน Toast เล็กๆ
                         if(response.includes('ไม่พบเอกสาร') && search !== '') {
                              const Toast = Swal.mixin({
                                 toast: true,
                                 position: 'top-end',
                                 showConfirmButton: false,
-                                timer: 3000,
+                                timer: 2000,
                                 timerProgressBar: true
                             });
                             Toast.fire({
                                 icon: 'info',
-                                title: 'ไม่พบเอกสารที่ค้นหา'
+                                title: 'ไม่พบข้อมูลที่ค้นหา'
                             });
                         }
                     },
                     error: function() {
-                        Swal.fire('Error', 'เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'เกิดข้อผิดพลาด',
+                            text: 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้'
+                        });
                     }
                 });
             }
@@ -250,12 +299,13 @@ $depts = $conn->query("SELECT * FROM departments ORDER BY name ASC");
             // โหลดข้อมูลครั้งแรก
             loadDocuments();
 
-            // ดักจับเหตุการณ์การพิมพ์หรือเปลี่ยนตัวเลือก
+            // ดักจับเหตุการณ์การพิมพ์ (ใส่ Timeout ป้องกัน Request ถี่เกินไป)
             $('#search_text').on('keyup', function() {
-                loadDocuments();
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(loadDocuments, 300); // รอ 300ms หลังพิมพ์เสร็จค่อยค้นหา
             });
 
-            // การดักจับ #search_dept
+            // ดักจับการเปลี่ยน Dropdown
             $('#search_type, #search_status, #search_dept').on('change', function() {
                 loadDocuments();
             });

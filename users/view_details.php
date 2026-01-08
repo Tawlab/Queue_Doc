@@ -62,7 +62,15 @@ if (!$doc) {
     <style>
         body { font-family: 'Kanit', sans-serif; background: #f4f7f6; }
         .main-content { padding: 30px; width: 100%; height: 100vh; overflow-y: auto; }
-        .detail-label { font-weight: 500; color: #6c757d; width: 150px; }
+        
+        /* ปรับปรุง Label ให้ไม่หดตัว และมีความกว้างคงที่ */
+        .detail-label { 
+            font-weight: 500; 
+            color: #6c757d; 
+            width: 150px; 
+            flex-shrink: 0; /* สำคัญ: ห้ามหดตัวเมื่อเนื้อหายาว */
+        }
+        
         .info-card { border-radius: 15px; border: none; }
         .file-item { padding: 10px; border: 1px solid #eee; border-radius: 10px; margin-bottom: 8px; transition: 0.2s; }
         .file-item:hover { background: #f8f9fa; }
@@ -109,9 +117,8 @@ if (!$doc) {
                                     <div class="fs-6 text-dark"><?php echo htmlspecialchars($doc['external_no'] ?: '-'); ?></div>
                                 </div>
 
-                                <div class="d-flex mb-3">
-                                    <div class="detail-label">เรื่อง</div>
-                                    <div class="fs-6"><?php echo htmlspecialchars($doc['title']); ?></div>
+                                <div class="d-flex mb-3 align-items-start">
+                                    <div class="detail-label pt-1">เรื่อง</div> <div class="fs-6 text-break"><?php echo htmlspecialchars($doc['title']); ?></div>
                                 </div>
 
                                 <div class="d-flex mb-3">
@@ -125,7 +132,6 @@ if (!$doc) {
                                     <div class="text-success fw-bold">
                                         <i class="bi bi-check-circle-fill me-1"></i>
                                         <?php 
-                                            // ใช้ updated_at ถ้ามี หรือใช้ created_at หากไม่มีการแก้ไข
                                             $completed_time = $doc['updated_at'] ?? $doc['created_at'];
                                             echo date('d/m/Y H:i', strtotime($completed_time)) . ' น.';
                                         ?>
@@ -149,14 +155,14 @@ if (!$doc) {
                                     <?php endif; ?>
                                 </div>
 
-                                <div class="d-flex mb-3">
-                                    <div class="detail-label">รายละเอียด</div>
-                                    <div class="text-muted"><?php echo nl2br(htmlspecialchars($doc['book_name'] ?: 'ไม่มีรายละเอียดเพิ่มเติม')); ?></div>
+                                <div class="d-flex mb-3 align-items-start">
+                                    <div class="detail-label pt-1">รายละเอียด</div>
+                                    <div class="text-muted text-break"><?php echo nl2br(htmlspecialchars($doc['book_name'] ?: 'ไม่มีรายละเอียดเพิ่มเติม')); ?></div>
                                 </div>
 
-                                <div class="d-flex mb-3">
-                                    <div class="detail-label">ความเห็น/หมายเหตุ</div>
-                                    <div class="p-3 bg-light rounded-3 w-100 text-danger fw-medium">
+                                <div class="d-flex mb-3 align-items-start">
+                                    <div class="detail-label pt-2">ความเห็น/หมายเหตุ</div>
+                                    <div class="p-3 bg-light rounded-3 w-100 text-danger fw-medium text-break">
                                         <?php echo nl2br(htmlspecialchars($doc['remark'] ?: '-')); ?>
                                     </div>
                                 </div>
@@ -174,7 +180,7 @@ if (!$doc) {
                                 </div>
                                 <div class="mb-4">
                                     <small class="text-muted d-block">รับจากหน่วยงาน:</small>
-                                    <div><?php echo htmlspecialchars($doc['from_source']); ?></div>
+                                    <div class="text-break"><?php echo htmlspecialchars($doc['from_source']); ?></div>
                                 </div>
                                 <div class="mb-2">
                                     <small class="text-muted d-block">ส่งถึงแผนก:</small>

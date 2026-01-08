@@ -149,11 +149,11 @@ $dashboardLink = ($role == 'Admin') ? "$base_url/admin/dashboard.php" : "$base_u
                 </a>
             <?php endif; ?>
 
-            <?php if (hasPermission($conn, $sidebar_uid, $dept_id, 'forward') && $role !== 'Admin'): ?>
+            <!-- <?php if (hasPermission($conn, $sidebar_uid, $dept_id, 'forward') && $role !== 'Admin'): ?>
                 <a href="<?php echo $base_url; ?>/users/forward_doc.php" class="nav-link-custom <?php echo ($currentPage == 'forward_doc.php' || $currentPage == 'forward_list.php') ? 'active' : ''; ?>">
                     <i class="bi bi-share me-2"></i> ส่งต่อเอกสาร
                 </a>
-            <?php endif; ?>
+            <?php endif; ?> -->
         <?php endif; ?>
 
         <?php if (

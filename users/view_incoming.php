@@ -13,29 +13,48 @@ $my_user_id = $_SESSION['user_id'];
 $alert_script = "";
 
 // 2. รับค่าตัวกรอง
-$filter_status = $_GET['filter'] ?? 'pending'; 
-$search_query  = $_GET['search'] ?? '';       
-$date_filter   = $_GET['date'] ?? '';          
-$type_filter   = $_GET['type'] ?? '';          
+$filter_status = $_GET['filter'] ?? 'pending';
+$search_query  = $_GET['search'] ?? '';
+$date_filter   = $_GET['date'] ?? '';
+$type_filter   = $_GET['type'] ?? '';
 
 $page_title = "เอกสาร";
 
 // 3. กำหนดหัวข้อหน้า (แยกตาม Filter)
 switch ($filter_status) {
-    case 'pending': $page_title = "เอกสารรอดำเนินการ"; break;
-    case 'process': $page_title = "เอกสารกำลังดำเนินการ"; break;
-    case 'success': $page_title = "เอกสารเสร็จสิ้น"; break;
-    case 'draft':   $page_title = "แบบร่างเอกสาร"; break;
-    case 'all':     $page_title = "เอกสารทั้งหมด"; break;
-    default:        $page_title = "เอกสารรอดำเนินการ"; $filter_status = 'pending';
+    case 'pending':
+        $page_title = "เอกสารรอดำเนินการ (รอรับ)";
+        break; // ขาเข้า
+    case 'success':
+        $page_title = "เอกสารเสร็จสิ้น";
+        break;
+    case 'draft':
+        $page_title = "แบบร่างเอกสาร";
+        break;
+    case 'cancel':
+        $page_title = "เอกสารที่ถูกยกเลิก/ส่งคืน";
+        break;
+    case 'sent_pending':
+        $page_title = "ติดตามสถานะ (ปลายทางยังไม่รับ)";
+        break; // [ใหม่] ขาออกที่รออยู่
+    case 'all':
+        $page_title = "เอกสารทั้งหมด";
+        break;
+    default:
+        $page_title = "เอกสารรอดำเนินการ";
+        $filter_status = 'pending';
 }
 
-// 4. สร้าง SQL Query แบบ Dynamic (Logic ใหม่)
+// 4. สร้าง SQL Query แบบ Dynamic
+// [แก้ไข] เพิ่ม LEFT JOIN departments เพื่อดึงชื่อแผนกปลายทาง
 $sql = "SELECT d.id, d.document_no, d.external_no, d.title, d.status, d.priority, d.created_at, d.book_name,
-               u.first_name, u.last_name, t.type_name 
+                d.sender_id,
+               u.first_name, u.last_name, t.type_name,
+               dept.name as to_dept_name 
         FROM documents d
         LEFT JOIN users u ON d.sender_id = u.id
         LEFT JOIN document_types t ON d.document_type_id = t.id
+        LEFT JOIN departments dept ON d.to_department_id = dept.id
         WHERE ";
 
 $params = [];
@@ -43,22 +62,30 @@ $types = "";
 
 // --- สร้างเงื่อนไข WHERE ตาม Filter ---
 if ($filter_status == 'all') {
-    // กรณี "ทั้งหมด": เอา (ส่งถึงฉัน และยังไม่ส่งต่อ) หรือ (ฉันเป็นคนร่าง)
+    // กรณี "ทั้งหมด": แสดง (ส่งถึงฉัน และยังไม่ส่งต่อ) หรือ (ฉันเป็นคนร่าง หรือ ฉันเป็นคนส่งแล้วโดนยกเลิก)
     $sql .= "( (d.to_department_id = ? AND (d.is_forwarded = 0 OR d.is_forwarded IS NULL)) 
                OR 
-               (d.sender_id = ? AND d.status = 'draft') )";
+               (d.sender_id = ? AND d.status IN ('draft', 'cancel', 'pending')) )";
     $params[] = $my_dept_id;
     $params[] = $my_user_id;
     $types .= "ii";
-
 } elseif ($filter_status == 'draft') {
     // กรณี "แบบร่าง": ดูจาก sender_id และสถานะ draft
     $sql .= "d.sender_id = ? AND d.status = 'draft'";
     $params[] = $my_user_id;
     $types .= "i";
-
+} elseif ($filter_status == 'cancel') {
+    // กรณี "ยกเลิก": ดูจาก sender_id (ฉันส่งไปแล้วโดนตีกลับ)
+    $sql .= "d.sender_id = ? AND d.status = 'cancel'";
+    $params[] = $my_user_id;
+    $types .= "i";
+} elseif ($filter_status == 'sent_pending') {
+    // [ใหม่] กรณี "ติดตามสถานะ": ฉันเป็นคนส่ง + สถานะยังเป็น pending (ปลายทางยังไม่รับ)
+    $sql .= "d.sender_id = ? AND d.status = 'pending'";
+    $params[] = $my_user_id;
+    $types .= "i";
 } else {
-    // กรณีอื่นๆ (Pending, Process, Success): ดูจาก to_department_id และสถานะ
+    // กรณีอื่นๆ (Pending ขาเข้า, Success): ดูจาก to_department_id (ส่งมาถึงฉัน)
     $sql .= "d.to_department_id = ? AND d.status = ? AND (d.is_forwarded = 0 OR d.is_forwarded IS NULL)";
     $params[] = $my_dept_id;
     $params[] = $filter_status;
@@ -99,15 +126,23 @@ $result = $stmt->get_result();
 $types_result = $conn->query("SELECT * FROM document_types ORDER BY type_name ASC");
 
 // ฟังก์ชันสร้าง URL
-function build_url($new_params = []) {
+function build_url($new_params = [])
+{
     $params = $_GET;
-    foreach ($new_params as $key => $value) { $params[$key] = $value; }
+    
+    if (isset($params['status'])) unset($params['status']);
+    if (isset($params['id'])) unset($params['id']); // ลบ id ด้วยเผื่อกรณีอื่น
+    
+    foreach ($new_params as $key => $value) {
+        $params[$key] = $value;
+    }
     return '?' . http_build_query($params);
 }
 ?>
 
 <!DOCTYPE html>
 <html lang="th">
+
 <head>
     <meta charset="UTF-8">
     <title><?= $page_title ?> - E-Document</title>
@@ -115,40 +150,83 @@ function build_url($new_params = []) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Kanit', sans-serif; background: #f4f7f6; }
-        .main-content { padding: 30px; width: 100%; height: 100vh; overflow-y: auto; }
-        .table-hover tbody tr:hover { background-color: #ffffff; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); }
-        .btn-action { font-size: 0.85rem; border-radius: 20px; padding: 5px 15px; }
-        .nav-pills .nav-link { color: #6c757d; border-radius: 20px; padding: 8px 20px; margin-right: 5px; }
-        .nav-pills .nav-link.active { background-color: #0d6efd; color: white; box-shadow: 0 4px 6px rgba(13, 110, 253, 0.2); }
-        .filter-card { background: #fff; border-radius: 15px; border: 1px solid #eef0f2; padding: 20px; margin-bottom: 20px; }
+        body {
+            font-family: 'Kanit', sans-serif;
+            background: #f4f7f6;
+        }
+
+        .main-content {
+            padding: 30px;
+            width: 100%;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .table-hover tbody tr:hover {
+            background-color: #ffffff;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .btn-action {
+            font-size: 0.85rem;
+            border-radius: 20px;
+            padding: 5px 15px;
+        }
+
+        .nav-pills .nav-link {
+            color: #6c757d;
+            border-radius: 20px;
+            padding: 8px 20px;
+            margin-right: 5px;
+            font-size: 0.9rem;
+        }
+
+        .nav-pills .nav-link.active {
+            background-color: #0d6efd;
+            color: white;
+            box-shadow: 0 4px 6px rgba(13, 110, 253, 0.2);
+        }
+
+        .filter-card {
+            background: #fff;
+            border-radius: 15px;
+            border: 1px solid #eef0f2;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
+
 <body>
     <div class="d-flex">
         <div class="flex-shrink-0"><?php include '../includes/sidebar.php'; ?></div>
         <div class="main-content flex-grow-1">
             <div class="container-fluid">
-                
+
                 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
                     <h3 class="fw-bold text-primary m-0"><i class="bi bi-inbox-fill me-2"></i><?= $page_title ?></h3>
-                    
+
                     <div class="bg-white p-1 rounded-pill shadow-sm d-inline-block border">
                         <nav class="nav nav-pills">
-                            <a class="nav-link <?= $filter_status == 'pending' ? 'active' : '' ?>" href="<?= build_url(['filter'=>'pending']) ?>">
-                                <i class="bi bi-hourglass-split me-1"></i> รอรับ
+                            <a class="nav-link <?= $filter_status == 'pending' ? 'active' : '' ?>" href="<?= build_url(['filter' => 'pending']) ?>">
+                                <i class="bi bi-hourglass-split"></i> รอรับ
                             </a>
-                            <a class="nav-link <?= $filter_status == 'process' ? 'active' : '' ?>" href="<?= build_url(['filter'=>'process']) ?>">
-                                <i class="bi bi-gear-fill me-1"></i> กำลังทำ
+                            <a class="nav-link <?= $filter_status == 'success' ? 'active' : '' ?>" href="<?= build_url(['filter' => 'success']) ?>">
+                                <i class="bi bi-check-circle-fill"></i> เสร็จสิ้น
                             </a>
-                            <a class="nav-link <?= $filter_status == 'success' ? 'active' : '' ?>" href="<?= build_url(['filter'=>'success']) ?>">
-                                <i class="bi bi-check-circle-fill me-1"></i> เสร็จสิ้น
+
+                            <a class="nav-link <?= $filter_status == 'sent_pending' ? 'active' : '' ?>" href="<?= build_url(['filter' => 'sent_pending']) ?>">
+                                <i class="bi bi-send-exclamation"></i> ติดตาม (รอปลายทาง)
                             </a>
-                            <a class="nav-link <?= $filter_status == 'draft' ? 'active' : '' ?>" href="<?= build_url(['filter'=>'draft']) ?>">
-                                <i class="bi bi-pencil-square me-1"></i> แบบร่าง
+                            <a class="nav-link <?= $filter_status == 'draft' ? 'active' : '' ?>" href="<?= build_url(['filter' => 'draft']) ?>">
+                                <i class="bi bi-pencil-square"></i> แบบร่าง
                             </a>
-                            <a class="nav-link <?= $filter_status == 'all' ? 'active' : '' ?>" href="<?= build_url(['filter'=>'all']) ?>">
-                                <i class="bi bi-collection-fill me-1"></i> ทั้งหมด
+                            <a class="nav-link <?= $filter_status == 'cancel' ? 'active' : '' ?>" href="<?= build_url(['filter' => 'cancel']) ?>">
+                                <i class="bi bi-x-circle-fill"></i> ถูกตีกลับ
+                            </a>
+
+                            <a class="nav-link <?= $filter_status == 'all' ? 'active' : '' ?>" href="<?= build_url(['filter' => 'all']) ?>">
+                                <i class="bi bi-collection-fill"></i> ทั้งหมด
                             </a>
                         </nav>
                     </div>
@@ -157,15 +235,15 @@ function build_url($new_params = []) {
                 <div class="filter-card">
                     <form method="GET" action="">
                         <input type="hidden" name="filter" value="<?= htmlspecialchars($filter_status) ?>">
-                        
+
                         <div class="row g-3 align-items-end">
                             <div class="col-md-4">
                                 <label class="form-label small text-muted fw-bold">ค้นหา</label>
                                 <div class="input-group">
                                     <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                                    <input type="text" name="search" class="form-control border-start-0" 
-                                           placeholder="เลขที่รับ / เลขที่ภายนอก / เรื่อง" 
-                                           value="<?= htmlspecialchars($search_query) ?>">
+                                    <input type="text" name="search" class="form-control border-start-0"
+                                        placeholder="เลขที่รับ / เลขที่ภายนอก / เรื่อง"
+                                        value="<?= htmlspecialchars($search_query) ?>">
                                 </div>
                             </div>
                             <div class="col-md-3">
@@ -176,7 +254,7 @@ function build_url($new_params = []) {
                                 <label class="form-label small text-muted fw-bold">ประเภทเอกสาร</label>
                                 <select name="type" class="form-select">
                                     <option value="">-- ทั้งหมด --</option>
-                                    <?php while($t = $types_result->fetch_assoc()): ?>
+                                    <?php while ($t = $types_result->fetch_assoc()): ?>
                                         <option value="<?= $t['id'] ?>" <?= $type_filter == $t['id'] ? 'selected' : '' ?>>
                                             <?= htmlspecialchars($t['type_name']) ?>
                                         </option>
@@ -186,7 +264,7 @@ function build_url($new_params = []) {
                             <div class="col-md-2">
                                 <div class="d-flex gap-2">
                                     <button type="submit" class="btn btn-primary w-100 shadow-sm"><i class="bi bi-funnel"></i> กรอง</button>
-                                    <?php if(!empty($search_query) || !empty($date_filter) || !empty($type_filter)): ?>
+                                    <?php if (!empty($search_query) || !empty($date_filter) || !empty($type_filter)): ?>
                                         <a href="?filter=<?= $filter_status ?>" class="btn btn-outline-secondary w-50" title="ล้างค่า"><i class="bi bi-x-lg"></i></a>
                                     <?php endif; ?>
                                 </div>
@@ -202,8 +280,10 @@ function build_url($new_params = []) {
                                 <thead class="bg-light border-bottom">
                                     <tr>
                                         <th class="ps-4 py-3" width="15%">วันที่</th>
-                                        <th class="py-3" width="45%">รายละเอียด</th>
-                                        <th class="py-3" width="15%">ประเภท</th>
+                                        <th class="py-3" width="40%">รายละเอียด</th>
+                                        <th class="py-3" width="20%">
+                                            <?php echo ($filter_status == 'sent_pending' || $filter_status == 'draft') ? 'ส่งถึง / สถานะ' : 'ผู้ส่ง / ประเภท'; ?>
+                                        </th>
                                         <th class="py-3" width="10%">สถานะ</th>
                                         <th class="py-3 text-center" width="15%">จัดการ</th>
                                     </tr>
@@ -224,12 +304,12 @@ function build_url($new_params = []) {
                                                     <?php endif; ?>
 
                                                     <div class="fw-bold text-dark"><?php echo htmlspecialchars($row['title']); ?></div>
-                                                    
+
                                                     <div class="d-flex gap-2 mt-1">
                                                         <span class="badge bg-light text-secondary border small">
                                                             ภายใน: <?php echo htmlspecialchars($row['document_no']); ?>
                                                         </span>
-                                                        <?php if(!empty($row['external_no'])): ?>
+                                                        <?php if (!empty($row['external_no'])): ?>
                                                             <span class="badge bg-white text-muted border small">
                                                                 ภายนอก: <?php echo htmlspecialchars($row['external_no']); ?>
                                                             </span>
@@ -237,22 +317,51 @@ function build_url($new_params = []) {
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <span class="badge bg-info text-dark bg-opacity-10 border border-info">
-                                                        <?php echo htmlspecialchars($row['type_name']); ?>
-                                                    </span>
+                                                    <?php if ($filter_status == 'sent_pending'): ?>
+                                                        <div class="d-flex align-items-center text-primary">
+                                                            <i class="bi bi-arrow-right-circle-fill me-2"></i>
+                                                            <strong><?= htmlspecialchars($row['to_dept_name'] ?? 'ไม่ระบุ') ?></strong>
+                                                        </div>
+                                                        <div class="small text-muted mt-1">ประเภท: <?= htmlspecialchars($row['type_name']) ?></div>
+                                                    <?php else: ?>
+                                                        <div class="d-flex align-items-center">
+                                                            <div class="bg-light rounded-circle d-flex align-items-center justify-content-center me-2" style="width:30px;height:30px;">
+                                                                <i class="bi bi-person text-secondary"></i>
+                                                            </div>
+                                                            <span class="small text-dark"><?php echo htmlspecialchars($row['first_name'] . ' ' . $row['last_name']); ?></span>
+                                                        </div>
+                                                        <div class="mt-1">
+                                                            <span class="badge bg-info text-dark bg-opacity-10 border border-info">
+                                                                <?php echo htmlspecialchars($row['type_name']); ?>
+                                                            </span>
+                                                        </div>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td>
-                                                    <?php if($row['status']=='draft'): ?>
+                                                    <?php if ($row['status'] == 'draft'): ?>
                                                         <span class="badge bg-secondary">แบบร่าง</span>
                                                     <?php else: ?>
                                                         <?php
                                                         $status_badge = 'bg-secondary';
                                                         $status_text = $row['status'];
-                                                        switch($row['status']) {
-                                                            case 'pending': $status_badge = 'bg-warning text-dark'; $status_text = 'รอดำเนินการ'; break;
-                                                            case 'process': $status_badge = 'bg-info text-dark'; $status_text = 'กำลังดำเนินการ'; break;
-                                                            case 'success': $status_badge = 'bg-success'; $status_text = 'เสร็จสิ้น'; break;
-                                                            case 'cancel': $status_badge = 'bg-danger'; $status_text = 'ยกเลิก'; break;
+                                                        switch ($row['status']) {
+                                                            case 'pending':
+                                                                $status_badge = 'bg-warning text-dark';
+                                                                // ปรับข้อความให้เข้าใจง่ายขึ้นตามบริบท
+                                                                $status_text = ($filter_status == 'sent_pending') ? 'รอปลายทางรับ' : 'รอดำเนินการ';
+                                                                break;
+                                                            case 'process':
+                                                                $status_badge = 'bg-info text-dark';
+                                                                $status_text = 'กำลังดำเนินการ';
+                                                                break;
+                                                            case 'success':
+                                                                $status_badge = 'bg-success';
+                                                                $status_text = 'เสร็จสิ้น';
+                                                                break;
+                                                            case 'cancel':
+                                                                $status_badge = 'bg-danger';
+                                                                $status_text = 'ยกเลิก/ส่งคืน';
+                                                                break;
                                                         }
                                                         ?>
                                                         <span class="badge rounded-pill <?php echo $status_badge; ?>">
@@ -262,21 +371,24 @@ function build_url($new_params = []) {
                                                 </td>
                                                 <td class="text-center">
                                                     <div class="d-flex gap-2 justify-content-center">
-                                                        <?php if ($row['status'] == 'draft'): ?>
-                                                            <a href="send_doc.php?draft_id=<?php echo $row['id']; ?>" 
-                                                               class="btn btn-sm btn-warning shadow-sm" title="แก้ไข/ส่ง">
-                                                                <i class="bi bi-pencil-square"></i> แก้ไข
+                                                        <?php if ($row['status'] == 'draft' || ($row['status'] == 'cancel' && $row['sender_id'] == $my_user_id)): ?>
+
+                                                            <a href="send_doc.php?draft_id=<?php echo $row['id']; ?>"
+                                                                class="btn btn-sm btn-warning shadow-sm" title="แก้ไข/ส่งใหม่">
+                                                                <i class="bi bi-pencil-square"></i> <?php echo ($row['status'] == 'cancel') ? 'ส่งใหม่' : 'แก้ไข'; ?>
                                                             </a>
+
+                                                            <button type="button" onclick="confirmDelete(<?php echo $row['id']; ?>)"
+                                                                class="btn btn-sm btn-danger shadow-sm" title="ลบทิ้ง">
+                                                                <i class="bi bi-trash"></i> ลบ
+                                                            </button>
+
+                                                        <?php elseif ($filter_status == 'sent_pending'): ?>
+                                                            <a href="view_details.php?id=<?php echo $row['id']; ?>" class="btn btn-sm btn-outline-info btn-action"><i class="bi bi-eye"></i> รายละเอียด</a>
                                                         <?php else: ?>
-                                                            <a href="view_details.php?id=<?php echo $row['id']; ?>" 
-                                                               class="btn btn-sm btn-outline-info btn-action" title="ดูรายละเอียด">
-                                                                <i class="bi bi-eye"></i>
-                                                            </a>
-                                                            <?php if ($row['status'] != 'success' && $row['status'] != 'cancel' && $row['status'] != 'archive'): ?>
-                                                                <a href="edit_status.php?id=<?php echo $row['id']; ?>" 
-                                                                   class="btn btn-sm btn-primary btn-action" title="อัปเดตสถานะ">
-                                                                    <i class="bi bi-pencil-square"></i>
-                                                                </a>
+                                                            <a href="view_details.php?id=<?php echo $row['id']; ?>" class="btn btn-sm btn-outline-info btn-action"><i class="bi bi-eye"></i></a>
+                                                            <?php if ($row['status'] != 'success' && $row['status'] != 'archive'): ?>
+                                                                <a href="edit_status.php?id=<?php echo $row['id']; ?>" class="btn btn-sm btn-primary btn-action"><i class="bi bi-pencil-square"></i></a>
                                                             <?php endif; ?>
                                                         <?php endif; ?>
                                                     </div>
@@ -300,5 +412,41 @@ function build_url($new_params = []) {
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        function confirmDelete(id) {
+            Swal.fire({
+                title: 'ยืนยันการลบ?',
+                text: "ข้อมูลแบบร่างจะถูกลบถาวร ไม่สามารถกู้คืนได้",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'ใช่, ลบทิ้งเลย',
+                cancelButtonText: 'ยกเลิก'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // ส่งค่าไปที่ไฟล์ delete_doc.php
+                    window.location.href = 'delete_doc.php?id=' + id;
+                }
+            });
+        }
+
+        // เช็คผลลัพธ์หลังลบเสร็จ (ถ้ามีส่งค่ากลับมา)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('status') === 'deleted') {
+            Swal.fire({
+                icon: 'success',
+                title: 'ลบข้อมูลเรียบร้อย',
+                showConfirmButton: false,
+                timer: 1500
+            }).then(() => {
+                // ล้างค่า URL เพื่อไม่ให้ Alert ขึ้นซ้ำ
+                const newUrl = window.location.pathname + '?filter=draft';
+                window.history.replaceState(null, null, newUrl);
+            });
+        }
+    </script>
 </body>
+
 </html>

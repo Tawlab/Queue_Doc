@@ -22,6 +22,7 @@ if (!$doc_id) {
     exit();
 }
 
+// ดึงข้อมูลเอกสาร + อีเมลผู้ส่ง (u.email)
 $sql = "SELECT d.*, u.username as sender_name, u.email as sender_email, t.type_name as type_name 
         FROM documents d
         LEFT JOIN users u ON d.sender_id = u.id
@@ -39,93 +40,98 @@ if (!$doc) {
 
 // เมื่อมีการอัปเดตสถานะ (POST)
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $new_status = $_POST['status'];
-    $remark = trim($_POST['remark']);
-    $actor_name = $_SESSION['fullname']; // ชื่อคนที่กดอัปเดต
-
-    $update_sql = "UPDATE documents SET status = ?, remark = ? WHERE id = ?";
-    $stmt_update = $conn->prepare($update_sql);
-    $stmt_update->bind_param("ssi", $new_status, $remark, $doc_id);
-
-    if ($stmt_update->execute()) {
-        
-        // แปลงสถานะเป็นภาษาไทยสำหรับแสดงผล
-        $status_text = ($new_status == 'process') ? 'กำลังดำเนินการ' : (($new_status == 'success') ? 'รับเรื่องแล้ว' : 'ส่งคืน / ยกเลิก');
-        
-        $notif_title = "อัปเดตสถานะเอกสาร: " . $doc['title'];
-        $notif_msg = "เอกสารเลขที่ " . $doc['document_no'] . " สถานะเปลี่ยนเป็น: $status_text โดย $actor_name";
-        
-        $sender_id = $doc['sender_id'];
-        $sender_email = $doc['sender_email'];
-
-        // บันทึกแจ้งเตือนลงเว็บ (Web Notification)
-        $stmt_n = $conn->prepare("INSERT INTO notifications (user_id, title, message, is_read, created_at) VALUES (?, ?, ?, 0, NOW())");
-        $stmt_n->bind_param("iss", $sender_id, $notif_title, $notif_msg);
-        $stmt_n->execute();
-
-        // ส่งอีเมลแจ้งกลับ (Email Notification)
-        if (!empty($sender_email)) {
-            $email_subject = "แจ้งความคืบหน้าเอกสาร: " . $doc['title'] . " (" . $doc['document_no'] . ")";
-            $status_color = '#0d6efd'; 
-            if ($new_status == 'success') $status_color = '#198754'; 
-            if ($new_status == 'cancel') $status_color = '#dc3545';  
-
-            $link_url = "http://" . $_SERVER['HTTP_HOST'] . "/queue_document";
-
-            $email_body = "
-            <html>
-            <head>
-                <link href='https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap' rel='stylesheet'>
-                <style> body { font-family: 'Sarabun', sans-serif; margin: 0; padding: 0; background-color: #f4f6f9; } </style>
-            </head>
-            <body style='background-color: #f4f6f9; padding: 20px; font-family: \"Sarabun\", sans-serif;'>
-                <div style='max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border-top: 5px solid #1a237e;'>
-                    <div style='background-color: #ffffff; padding: 25px 30px; border-bottom: 1px solid #ececec;'>
-                        <h2 style='margin: 0; color: #1a237e; font-size: 22px; font-weight: 600;'>ระบบสารบรรณอิเล็กทรอนิกส์</h2>
-                        <p style='margin: 5px 0 0; color: #6c757d; font-size: 14px;'>E-Document Notification System</p>
-                    </div>
-                    <div style='padding: 30px;'>
-                        <p style='font-size: 16px; color: #333333; margin-bottom: 20px;'><b>เรียน เจ้าของเรื่อง</b></p>
-                        <p style='color: #555555; line-height: 1.6; margin-bottom: 25px;'>
-                            เอกสารของท่านได้รับการดำเนินการและปรับปรุงสถานะแล้ว โดยมีรายละเอียดดังนี้:
-                        </p>
-                        <div style='background-color: #f8f9fa; border-radius: 6px; padding: 20px; border: 1px solid #e9ecef;'>
-                            <table style='width: 100%; border-collapse: collapse;'>
-                                <tr><td style='padding: 8px 0; color: #6c757d; width: 35%; font-size: 14px;'>เลขที่เอกสาร:</td><td style='padding: 8px 0; color: #1a237e; font-weight: 600; font-size: 15px;'>$doc[document_no]</td></tr>
-                                <tr><td style='padding: 8px 0; color: #6c757d; font-size: 14px;'>เรื่อง:</td><td style='padding: 8px 0; color: #333333; font-weight: 600; font-size: 15px;'>$doc[title]</td></tr>
-                                <tr><td style='padding: 8px 0; color: #6c757d; font-size: 14px;'>สถานะล่าสุด:</td><td style='padding: 8px 0; color: $status_color; font-weight: bold; font-size: 16px;'>$status_text</td></tr>
-                                <tr><td style='padding: 8px 0; color: #6c757d; font-size: 14px;'>ผู้ดำเนินการ:</td><td style='padding: 8px 0; color: #333333; font-size: 15px;'>$actor_name</td></tr>
-                                <tr><td style='padding: 8px 0; color: #6c757d; font-size: 14px;'>หมายเหตุ:</td><td style='padding: 8px 0; color: #333333; font-size: 15px;'>" . ($remark ? $remark : '-') . "</td></tr>
-                                <tr><td style='padding: 8px 0; color: #6c757d; font-size: 14px;'>วันที่ดำเนินการ:</td><td style='padding: 8px 0; color: #333333; font-size: 15px;'>" . date('d/m/Y H:i') . "</td></tr>
-                            </table>
-                        </div>
-                        <div style='text-align: center; margin-top: 30px;'>
-                            <a href='$link_url' style='background-color: #198754; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; box-shadow: 0 2px 5px rgba(25, 135, 84, 0.3);'>ตรวจสอบผลการดำเนินงาน</a>
-                        </div>
-                    </div>
-                    <div style='background-color: #f1f3f5; padding: 20px; text-align: center;'>
-                        <p style='margin: 0; font-size: 12px; color: #868e96;'>อีเมลฉบับนี้เป็นการแจ้งเตือนอัตโนมัติ กรุณาอย่าตอบกลับ<br>&copy; " . date('Y') . " E-Document System. สงวนลิขสิทธิ์</p>
-                    </div>
-                </div>
-            </body>
-            </html>";
-            
-            sendEmail($sender_email, $email_subject, $email_body);
-        }
-
-        $alert_script = "
-            Swal.fire({
-                title: 'บันทึกสำเร็จ!',
-                text: 'ปรับปรุงสถานะเอกสารเรียบร้อยแล้ว',
-                icon: 'success',
-                confirmButtonColor: '#6366f1',
-                confirmButtonText: 'ตกลง'
-            }).then(() => {
-                window.location = 'view_incoming.php';
-            });
-        ";
+    // ตรวจสอบฝั่ง Server อีกครั้งเผื่อหลุดมา
+    if (!isset($_POST['status'])) {
+        $alert_script = "Swal.fire('แจ้งเตือน', 'กรุณาเลือกสถานะก่อนบันทึก', 'warning');";
     } else {
-        $alert_script = "Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้', 'error');";
+        $new_status = $_POST['status'];
+        $remark = trim($_POST['remark']);
+        $actor_name = $_SESSION['fullname']; // ชื่อคนที่กดอัปเดต
+
+        $update_sql = "UPDATE documents SET status = ?, remark = ? WHERE id = ?";
+        $stmt_update = $conn->prepare($update_sql);
+        $stmt_update->bind_param("ssi", $new_status, $remark, $doc_id);
+
+        if ($stmt_update->execute()) {
+            
+            // แปลงสถานะเป็นภาษาไทยสำหรับแสดงผล
+            $status_text = ($new_status == 'process') ? 'กำลังดำเนินการ' : (($new_status == 'success') ? 'รับเรื่องแล้ว' : 'ส่งคืน / ยกเลิก');
+            
+            $notif_title = "อัปเดตสถานะเอกสาร: " . $doc['title'];
+            $notif_msg = "เอกสารเลขที่ " . $doc['document_no'] . " สถานะเปลี่ยนเป็น: $status_text โดย $actor_name";
+            
+            $sender_id = $doc['sender_id'];
+            $sender_email = $doc['sender_email'];
+
+            // บันทึกแจ้งเตือนลงเว็บ (Web Notification)
+            $stmt_n = $conn->prepare("INSERT INTO notifications (user_id, title, message, is_read, created_at) VALUES (?, ?, ?, 0, NOW())");
+            $stmt_n->bind_param("iss", $sender_id, $notif_title, $notif_msg);
+            $stmt_n->execute();
+
+            // ส่งอีเมลแจ้งกลับ (Email Notification)
+            if (!empty($sender_email)) {
+                $email_subject = "แจ้งความคืบหน้าเอกสาร: " . $doc['title'] . " (" . $doc['document_no'] . ")";
+                $status_color = '#0d6efd'; 
+                if ($new_status == 'success') $status_color = '#198754'; 
+                if ($new_status == 'cancel') $status_color = '#dc3545';  
+
+                $link_url = "http://" . $_SERVER['HTTP_HOST'] . "/queue_document";
+
+                $email_body = "
+                <html>
+                <head>
+                    <link href='https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap' rel='stylesheet'>
+                    <style> body { font-family: 'Sarabun', sans-serif; margin: 0; padding: 0; background-color: #f4f6f9; } </style>
+                </head>
+                <body style='background-color: #f4f6f9; padding: 20px; font-family: \"Sarabun\", sans-serif;'>
+                    <div style='max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border-top: 5px solid #1a237e;'>
+                        <div style='background-color: #ffffff; padding: 25px 30px; border-bottom: 1px solid #ececec;'>
+                            <h2 style='margin: 0; color: #1a237e; font-size: 22px; font-weight: 600;'>ระบบสารบรรณอิเล็กทรอนิกส์</h2>
+                            <p style='margin: 5px 0 0; color: #6c757d; font-size: 14px;'>E-Document Notification System</p>
+                        </div>
+                        <div style='padding: 30px;'>
+                            <p style='font-size: 16px; color: #333333; margin-bottom: 20px;'><b>เรียน เจ้าของเรื่อง</b></p>
+                            <p style='color: #555555; line-height: 1.6; margin-bottom: 25px;'>
+                                เอกสารของท่านได้รับการดำเนินการและปรับปรุงสถานะแล้ว โดยมีรายละเอียดดังนี้:
+                            </p>
+                            <div style='background-color: #f8f9fa; border-radius: 6px; padding: 20px; border: 1px solid #e9ecef;'>
+                                <table style='width: 100%; border-collapse: collapse;'>
+                                    <tr><td style='padding: 8px 0; color: #6c757d; width: 35%; font-size: 14px;'>เลขที่เอกสาร:</td><td style='padding: 8px 0; color: #1a237e; font-weight: 600; font-size: 15px;'>$doc[document_no]</td></tr>
+                                    <tr><td style='padding: 8px 0; color: #6c757d; font-size: 14px;'>เรื่อง:</td><td style='padding: 8px 0; color: #333333; font-weight: 600; font-size: 15px;'>$doc[title]</td></tr>
+                                    <tr><td style='padding: 8px 0; color: #6c757d; font-size: 14px;'>สถานะล่าสุด:</td><td style='padding: 8px 0; color: $status_color; font-weight: bold; font-size: 16px;'>$status_text</td></tr>
+                                    <tr><td style='padding: 8px 0; color: #6c757d; font-size: 14px;'>ผู้ดำเนินการ:</td><td style='padding: 8px 0; color: #333333; font-size: 15px;'>$actor_name</td></tr>
+                                    <tr><td style='padding: 8px 0; color: #6c757d; font-size: 14px;'>หมายเหตุ:</td><td style='padding: 8px 0; color: #333333; font-size: 15px;'>" . ($remark ? $remark : '-') . "</td></tr>
+                                    <tr><td style='padding: 8px 0; color: #6c757d; font-size: 14px;'>วันที่ดำเนินการ:</td><td style='padding: 8px 0; color: #333333; font-size: 15px;'>" . date('d/m/Y H:i') . "</td></tr>
+                                </table>
+                            </div>
+                            <div style='text-align: center; margin-top: 30px;'>
+                                <a href='$link_url' style='background-color: #198754; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; box-shadow: 0 2px 5px rgba(25, 135, 84, 0.3);'>ตรวจสอบผลการดำเนินงาน</a>
+                            </div>
+                        </div>
+                        <div style='background-color: #f1f3f5; padding: 20px; text-align: center;'>
+                            <p style='margin: 0; font-size: 12px; color: #868e96;'>อีเมลฉบับนี้เป็นการแจ้งเตือนอัตโนมัติ กรุณาอย่าตอบกลับ<br>&copy; " . date('Y') . " E-Document System. สงวนลิขสิทธิ์</p>
+                        </div>
+                    </div>
+                </body>
+                </html>";
+                
+                sendEmail($sender_email, $email_subject, $email_body);
+            }
+
+            $alert_script = "
+                Swal.fire({
+                    title: 'บันทึกสำเร็จ!',
+                    text: 'ปรับปรุงสถานะเอกสารเรียบร้อยแล้ว',
+                    icon: 'success',
+                    confirmButtonColor: '#6366f1',
+                    confirmButtonText: 'ตกลง'
+                }).then(() => {
+                    window.location = 'view_incoming.php';
+                });
+            ";
+        } else {
+            $alert_script = "Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้', 'error');";
+        }
     }
 }
 ?>
@@ -281,20 +287,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             </div>
                         </div>
 
-                        <form method="POST">
+                        <form method="POST" id="statusForm">
                             <h5 class="fw-bold mb-4"><i class="bi bi-pencil-square me-2 text-primary"></i>ดำเนินการกับเอกสารนี้</h5>
 
                             <div class="mb-4">
-                                <label class="form-label small fw-bold text-uppercase text-secondary">เลือกสถานะใหม่</label>
+                                <label class="form-label small fw-bold text-uppercase text-secondary">เลือกสถานะใหม่ <span class="text-danger">*</span></label>
                                 <div class="row g-3 status-btn-group">
                                     <div class="col-md-6">
-                                        <input type="radio" class="btn-check" name="status" id="st_success" value="success" <?php echo $doc['status'] == 'success' ? 'checked' : ''; ?>>
+                                        <input type="radio" class="btn-check" name="status" id="st_success" value="success" <?php echo $doc['status'] == 'success' ? 'checked' : ''; ?> required>
                                         <label class="btn btn-outline-success w-100 py-3 rounded-4" for="st_success">
                                             <i class="bi bi-check-circle fs-4 d-block mb-1"></i>รับเรื่องแล้ว
                                         </label>
                                     </div>
                                     <div class="col-md-6">
-                                        <input type="radio" class="btn-check" name="status" id="st_cancel" value="cancel" <?php echo $doc['status'] == 'cancel' ? 'checked' : ''; ?>>
+                                        <input type="radio" class="btn-check" name="status" id="st_cancel" value="cancel" <?php echo $doc['status'] == 'cancel' ? 'checked' : ''; ?> required>
                                         <label class="btn btn-outline-danger w-100 py-3 rounded-4" for="st_cancel">
                                             <i class="bi bi-x-circle fs-4 d-block mb-1"></i>ส่งคืน / ยกเลิก
                                         </label>
@@ -325,6 +331,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Script ตรวจสอบก่อนส่ง Form
+        const form = document.getElementById('statusForm');
+        form.addEventListener('submit', function(event) {
+            const statusChecked = document.querySelector('input[name="status"]:checked');
+            if (!statusChecked) {
+                event.preventDefault(); // หยุดการส่งฟอร์ม
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'กรุณาเลือกสถานะ',
+                    text: 'ต้องเลือก "รับเรื่องแล้ว" หรือ "ส่งคืน/ยกเลิก" ก่อนบันทึก',
+                    confirmButtonText: 'ตกลง',
+                    confirmButtonColor: '#ffc107'
+                });
+            }
+        });
+
         <?= $alert_script ?>
     </script>
 </body>

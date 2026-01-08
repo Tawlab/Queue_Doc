@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 08, 2026 at 04:45 AM
+-- Generation Time: Jan 08, 2026 at 06:06 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -151,7 +151,7 @@ CREATE TABLE `documents` (
   `pending_target_depts` text DEFAULT NULL COMMENT 'เก็บ ID แผนกปลายทางแบบ CSV สำหรับหนังสือเกษียณ',
   `document_type_id` int(11) NOT NULL COMMENT 'ประเภทเอกสาร',
   `from_source` varchar(100) DEFAULT NULL COMMENT 'รับจากหน่วยงาน/บุคคล',
-  `status` enum('pending','process','success','cancel') DEFAULT 'pending' COMMENT 'สถานะ',
+  `status` enum('pending','process','success','cancel','draft') DEFAULT 'pending',
   `priority` tinyint(1) NOT NULL DEFAULT 0 COMMENT '0=ปกติ, 1=ด่วน, 2=ด่วนที่สุด',
   `remark` text DEFAULT NULL,
   `file_path` varchar(255) DEFAULT NULL COMMENT 'ชื่อไฟล์แนบ',
@@ -159,23 +159,6 @@ CREATE TABLE `documents` (
   `is_forwarded` tinyint(1) DEFAULT 0 COMMENT '0=รอส่ง, 1=ส่งแล้ว',
   `parent_id` int(11) DEFAULT NULL COMMENT 'เก็บ ID เอกสารต้นทาง'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
---
--- Dumping data for table `documents`
---
-
-INSERT INTO `documents` (`id`, `document_no`, `external_no`, `title`, `book_name`, `receive_date`, `sender_id`, `to_department_id`, `pending_target_depts`, `document_type_id`, `from_source`, `status`, `priority`, `remark`, `file_path`, `created_at`, `is_forwarded`, `parent_id`) VALUES
-(87, '001/2568', 'dd', 'dd', 'dd', '2025-12-21', 24, 4, NULL, 1, 'dd', 'success', 0, '', 'DOC_20251221_205239_69485007b8281.pdf', '2025-12-21 19:52:39', 1, NULL),
-(88, '002/2568', 'dd', 'dd', 'dd', '2025-12-21', 21, 5, '22', 1, 'dd', 'success', 0, '[21/12/2025 20:53] หัวหน้าสำนักปลัด ทดสอบ:\r\n- ความเห็น: เพื่อโปรดทราบและดำเนินการต่อ\r\n- หมายเหตุ: ssa', 'DOC_20251221_205239_69485007b8281.pdf', '2025-12-21 19:53:02', 1, 87),
-(89, '003/2568', 'dd', 'dd', 'dd', '2025-12-21', 22, 6, '22', 1, 'dd', 'success', 0, '[21/12/2025 20:53] หัวหน้าสำนักปลัด ทดสอบ:\r\n- ความเห็น: เพื่อโปรดทราบและดำเนินการต่อ\r\n- หมายเหตุ: ssa\n[21/12/2025 20:53] ปลัด ทดสอบ:\n- ความเห็น: เพื่อโปรดทราบและดำเนินการต่อ\n- หมายเหตุ: asdg', 'DOC_20251221_205239_69485007b8281.pdf', '2025-12-21 19:53:21', 1, 88),
-(90, '004/2568', 'dd', 'dd', 'dd', '2025-12-21', 23, 2, '22', 1, 'dd', 'success', 0, '[21/12/2025 20:53] หัวหน้าสำนักปลัด ทดสอบ:\r\n- ความเห็น: เพื่อโปรดทราบและดำเนินการต่อ\r\n- หมายเหตุ: ssa\r\n[21/12/2025 20:53] ปลัด ทดสอบ:\r\n- ความเห็น: เพื่อโปรดทราบและดำเนินการต่อ\r\n- หมายเหตุ: asdg\r\n[21/12/2025 20:53] นายก นายก:\r\n- ความเห็น: ทราบ\r\n- หมายเหตุ: asdgg', 'DOC_20251221_205239_69485007b8281.pdf', '2025-12-21 19:53:41', 1, 89),
-(91, '005/2568', 'dd', 'dd', 'dd', '2025-12-21', 24, 22, NULL, 1, 'dd', 'success', 0, '[21/12/2025 20:53] หัวหน้าสำนักปลัด ทดสอบ:\r\n- ความเห็น: เพื่อโปรดทราบและดำเนินการต่อ\r\n- หมายเหตุ: ssa\r\n[21/12/2025 20:53] ปลัด ทดสอบ:\r\n- ความเห็น: เพื่อโปรดทราบและดำเนินการต่อ\r\n- หมายเหตุ: asdg\r\n[21/12/2025 20:53] นายก นายก:\r\n- ความเห็น: ทราบ\r\n- หมายเหตุ: asdgg\r\n[21/12/2025 20:54] ธุรการสำนักปลัด ทดสอบ (ธุรการสำนักปลัด):\r\n- หมายเหตุ: jjf', 'DOC_20251221_205239_69485007b8281.pdf', '2025-12-21 19:54:05', 0, 90),
-(92, '006/2568', 'asd', 'asd', '', '2025-12-22', 22, 1, NULL, 2, 'asd', 'pending', 0, NULL, '', '2025-12-22 16:19:33', 0, NULL),
-(93, '007/2568', '565', '456', '546', '2025-12-22', 24, 4, NULL, 1, '456', 'pending', 0, '', 'DOC_20251222_172033_69496fd19969f.pdf', '2025-12-22 16:20:33', 1, NULL),
-(94, '008/2568', '565', '456', '546', '2025-12-22', 21, 5, '22', 1, '456', 'pending', 0, '\n[22/12/2025 17:20] หัวหน้าสำนักปลัด ทดสอบ:\n- ความเห็น: เพื่อโปรดทราบและดำเนินการต่อ\n- หมายเหตุ: ', 'DOC_20251222_172033_69496fd19969f.pdf', '2025-12-22 16:20:55', 0, 93),
-(95, '009/2568', '', 'jjhjahsjhasdjkhdjhaskjjjdhkjashdkjhsakdhaksjhdkjashdhhsaiihqwihhdajhsjkdhajshdkjhaksh', 'j', '2025-12-22', 22, 24, NULL, 2, 'j', 'pending', 2, NULL, '', '2025-12-22 16:53:10', 0, NULL),
-(96, '010/2568', 'ทป001ddd', 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', 'dddddddddddddddd', '2025-12-22', 22, 22, NULL, 2, 'dddddddddddddddd', 'pending', 0, NULL, '', '2025-12-22 16:53:49', 0, NULL),
-(97, '011/2568', '', 'หากเปรียบชีวิตดั่งบทละคร และสมมติว่าเราเขียนบทชีวิตให้ตัวเองได้ เราจะเขียนมันออกมาเป็นเช่นไร? ซึ่งไม่ว่าจะปรุงแต่งไปในแนวทางใด เชื่อว่าเราคงเขียนให้ตัวเองเป็น พระเอก, นางเอก ตัวเอกในบทละครนั้น คงไม่มีใครอยากเป็นจอมวายร้าย, นางอิจฉา หรือตัวประกอบของละคร', '', '2025-12-22', 21, 22, NULL, 2, 'ก', 'pending', 0, NULL, '', '2025-12-22 16:58:22', 0, NULL);
 
 -- --------------------------------------------------------
 
@@ -241,27 +224,6 @@ CREATE TABLE `notifications` (
   `is_read` tinyint(1) DEFAULT 0,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
---
--- Dumping data for table `notifications`
---
-
-INSERT INTO `notifications` (`id`, `user_id`, `title`, `message`, `link`, `is_read`, `created_at`) VALUES
-(126, 21, 'หนังสือเกษียณใหม่', 'รอการพิจารณาและกำหนดปลายทาง', NULL, 0, '2025-12-21 19:52:39'),
-(127, 24, 'อัปเดตสถานะเอกสาร: dd', 'เอกสารเลขที่ 001/2568 สถานะเปลี่ยนเป็น: รับเรื่องแล้ว โดย หัวหน้าสำนักปลัด ทดสอบ', NULL, 0, '2025-12-21 19:52:53'),
-(128, 22, 'ได้รับเอกสารส่งต่อ', 'เรื่อง: dd', NULL, 0, '2025-12-21 19:53:02'),
-(129, 21, 'อัปเดตสถานะเอกสาร: dd', 'เอกสารเลขที่ 002/2568 สถานะเปลี่ยนเป็น: รับเรื่องแล้ว โดย ปลัด ทดสอบ', NULL, 0, '2025-12-21 19:53:15'),
-(130, 23, 'ได้รับเอกสารส่งต่อ', 'เรื่อง: dd', NULL, 1, '2025-12-21 19:53:21'),
-(131, 24, 'ได้รับเอกสารส่งต่อ', 'เรื่อง: dd', NULL, 0, '2025-12-21 19:53:42'),
-(132, 25, 'ได้รับเอกสารส่งต่อ', 'เรื่อง: dd', NULL, 0, '2025-12-21 19:54:05'),
-(133, 24, 'อัปเดตสถานะเอกสาร: dd', 'เอกสารเลขที่ 005/2568 สถานะเปลี่ยนเป็น: รับเรื่องแล้ว โดย กองคลัง ทดสอบ', NULL, 0, '2025-12-21 19:54:17'),
-(134, 23, 'อัปเดตสถานะเอกสาร: dd', 'เอกสารเลขที่ 004/2568 สถานะเปลี่ยนเป็น: รับเรื่องแล้ว โดย ธุรการสำนักปลัด ทดสอบ', NULL, 1, '2025-12-21 19:55:04'),
-(135, 1, 'มีเอกสารใหม่', 'asd', NULL, 1, '2025-12-22 16:19:33'),
-(136, 21, 'หนังสือเกษียณใหม่', 'รอการพิจารณาและกำหนดปลายทาง', NULL, 0, '2025-12-22 16:20:33'),
-(137, 24, 'อัปเดตสถานะเอกสาร: 456', 'เอกสารเลขที่ 007/2568 สถานะเปลี่ยนเป็น: รับเรื่องแล้ว โดย หัวหน้าสำนักปลัด ทดสอบ', NULL, 0, '2025-12-22 16:20:48'),
-(138, 22, 'ได้รับเอกสารส่งต่อ', 'เรื่อง: 456', NULL, 0, '2025-12-22 16:20:55'),
-(139, 25, 'มีเอกสารใหม่', 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', NULL, 0, '2025-12-22 16:53:49'),
-(140, 25, 'มีเอกสารใหม่', 'หากเปรียบชีวิตดั่งบทละคร และสมมติว่าเราเขียนบทชีวิตให้ตัวเองได้ เราจะเขียนมันออกมาเป็นเช่นไร? ซึ่งไม่ว่าจะปรุงแต่งไปในแนวทางใด เชื่อว่าเราคงเขียนให้ตัวเองเป็น พระเอก, นางเอก ตัวเอกในบทละครนั้น คงไม่มีใครอยากเป็นจอมวายร้าย, นางอิจฉา หรือตัวประกอบของละคร', NULL, 0, '2025-12-22 16:58:22');
 
 -- --------------------------------------------------------
 
@@ -503,7 +465,7 @@ ALTER TABLE `departments`
 -- AUTO_INCREMENT for table `documents`
 --
 ALTER TABLE `documents`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=98;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=107;
 
 --
 -- AUTO_INCREMENT for table `document_attachments`
@@ -527,7 +489,7 @@ ALTER TABLE `document_types`
 -- AUTO_INCREMENT for table `notifications`
 --
 ALTER TABLE `notifications`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=141;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=146;
 
 --
 -- AUTO_INCREMENT for table `permissions`

@@ -2,7 +2,112 @@
 session_start();
 include '../config/db.php';
 
-// จัดการตัวกรองเวลา (Time Filter)
+// ตรวจสอบการ Login
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../auth/login.php');
+    exit();
+}
+
+// ----------------------------------------------------------------------
+// ส่วนที่ 1: PHP สำหรับจัดการ AJAX Request (คืนค่าเป็น HTML Table Row)
+// ----------------------------------------------------------------------
+if (isset($_POST['action']) && $_POST['action'] == 'fetch_dashboard_data') {
+    $search = $_POST['search'] ?? '';
+    $type_id = $_POST['type_id'] ?? '';
+    $status = $_POST['status'] ?? '';
+    
+    // สร้างเงื่อนไข SQL
+    $where_sql = " WHERE 1=1 ";
+    $params = [];
+    $types = "";
+
+    // 1. ค้นหา: เลขที่ภายใน, เลขที่ภายนอก, ชื่อเรื่อง
+    if (!empty($search)) {
+        $where_sql .= " AND (d.document_no LIKE ? OR d.external_no LIKE ? OR d.title LIKE ?)";
+        $search_param = "%$search%";
+        $params[] = $search_param;
+        $params[] = $search_param;
+        $params[] = $search_param;
+        $types .= "sss";
+    }
+
+    // 2. กรองตามประเภท
+    if (!empty($type_id)) {
+        $where_sql .= " AND d.document_type_id = ?";
+        $params[] = $type_id;
+        $types .= "i";
+    }
+
+    // 3. กรองตามสถานะ
+    if (!empty($status)) {
+        $where_sql .= " AND d.status = ?";
+        $params[] = $status;
+        $types .= "s";
+    }
+
+    // ดึงข้อมูล (Limit 10 รายการล่าสุด เพื่อไม่ให้รกหน้า Dashboard)
+    $sql = "SELECT d.*, t.type_name 
+            FROM documents d 
+            LEFT JOIN document_types t ON d.document_type_id = t.id 
+            $where_sql 
+            ORDER BY d.id DESC LIMIT 10";
+    
+    $stmt = $conn->prepare($sql);
+    if (!empty($params)) {
+        $stmt->bind_param($types, ...$params);
+    }
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $badges = [
+                'pending' => 'bg-warning text-dark', 
+                'process' => 'bg-info text-dark', 
+                'success' => 'bg-success', 
+                'cancel' => 'bg-danger'
+            ];
+            $texts = [
+                'pending' => 'รอดำเนินการ', 
+                'process' => 'รับเรื่องแล้ว', 
+                'success' => 'เสร็จสิ้น', 
+                'cancel' => 'ยกเลิก'
+            ];
+            
+            $status_badge = $badges[$row['status']] ?? 'bg-secondary';
+            $status_text = $texts[$row['status']] ?? $row['status'];
+            $ext_no = !empty($row['external_no']) ? htmlspecialchars($row['external_no']) : '-';
+
+            echo '<tr>';
+            echo '<td class="ps-3 fw-bold text-primary">' . htmlspecialchars($row['document_no']) . '</td>';
+            echo '<td class="text-secondary">' . $ext_no . '</td>'; // คอลัมน์เลขที่ภายนอก
+            
+            // คอลัมน์เรื่อง: เพิ่ม class text-break และ style เพื่อตัดคำ
+            echo '<td>';
+            echo '  <div class="text-break" style="min-width: 200px; max-width: 400px;">';
+            echo       htmlspecialchars($row['title']);
+            echo '  </div>';
+            echo '</td>';
+            
+            echo '<td class="text-center"><span class="badge rounded-pill ' . $status_badge . '">' . $status_text . '</span></td>';
+            echo '<td class="text-center">';
+            echo '  <a href="../users/view_details.php?id=' . $row['id'] . '" class="btn btn-sm btn-outline-info rounded-pill px-3 shadow-sm">';
+            echo '      <i class="bi bi-eye"></i> ดูรายละเอียด';
+            echo '  </a>';
+            echo '</td>';
+            echo '</tr>';
+        }
+    } else {
+        echo '<tr><td colspan="5" class="text-center py-5 text-muted"><i class="bi bi-inbox fs-1 d-block mb-3 opacity-25"></i> ไม่พบข้อมูลเอกสาร</td></tr>';
+    }
+    exit();
+}
+
+// ----------------------------------------------------------------------
+// ส่วนที่ 2: PHP สำหรับโหลดหน้าเว็บปกติ (Load Stats & Initial View)
+// ----------------------------------------------------------------------
+
+// จัดการตัวกรองเวลาสำหรับ Stats Card (Time Filter)
 $time_filter = $_GET['time_filter'] ?? 'all';
 $time_sql = "";
 if ($time_filter == 'today') {
@@ -22,23 +127,7 @@ $process_docs = $conn->query("SELECT COUNT(*) as total FROM documents WHERE stat
 $success_docs = $conn->query("SELECT COUNT(*) as total FROM documents WHERE status = 'success' $time_sql")->fetch_assoc()['total'];
 $cancel_docs = $conn->query("SELECT COUNT(*) as total FROM documents WHERE status = 'cancel' $time_sql")->fetch_assoc()['total'];
 
-// รับค่าตัวกรองจาก URL และสร้างเงื่อนไข SQL
-$search   = $_GET['search'] ?? '';
-$f_type   = $_GET['type_id'] ?? '';
-$f_status = $_GET['status'] ?? '';
-
-$where_list = " WHERE 1=1";
-if (!empty($search))   $where_list .= " AND (d.document_no LIKE '%$search%' OR d.title LIKE '%$search%')";
-if (!empty($f_type))   $where_list .= " AND d.document_type_id = '$f_type'";
-if (!empty($f_status)) $where_list .= " AND d.status = '$f_status'";
-
-// ดึงรายการเอกสารล่าสุด 
-$recent_docs = $conn->query("SELECT d.*, t.type_name 
-                             FROM documents d 
-                             LEFT JOIN document_types t ON d.document_type_id = t.id 
-                             $where_list
-                             ORDER BY d.id DESC LIMIT 5");
-
+// ดึงประเภทเอกสารสำหรับ Dropdown
 $types = $conn->query("SELECT * FROM document_types");
 ?>
 
@@ -51,6 +140,8 @@ $types = $conn->query("SELECT * FROM document_types");
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
     <style>
         body {
             font-family: 'Kanit', sans-serif;
@@ -68,6 +159,11 @@ $types = $conn->query("SELECT * FROM document_types");
         .stat-card {
             border: none;
             border-radius: 12px;
+            transition: transform 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-3px);
         }
 
         .icon-box {
@@ -86,6 +182,13 @@ $types = $conn->query("SELECT * FROM document_types");
             padding: 15px;
             margin-bottom: 20px;
             border: 1px solid #eef0f2;
+        }
+        
+        /* CSS สำหรับตัดบรรทัด */
+        .text-break {
+            word-wrap: break-word !important;
+            word-break: break-word !important;
+            white-space: normal !important;
         }
     </style>
 </head>
@@ -166,38 +269,41 @@ $types = $conn->query("SELECT * FROM document_types");
                 </div>
 
                 <div class="filter-section shadow-sm bg-white p-3 mb-4 rounded-3 border">
-                    <form method="GET" class="row g-2">
-                        <input type="hidden" name="time_filter" value="<?php echo htmlspecialchars($time_filter); ?>">
+                    <form id="dashboardFilterForm" class="row g-2" onsubmit="return false;">
                         <div class="col-md-4">
-                            <input type="text" name="search" class="form-control form-control-sm" placeholder="เลขที่/ชื่อเรื่อง..." value="<?php echo htmlspecialchars($search); ?>">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                                <input type="text" id="search" class="form-control" placeholder="เลขที่ภายใน / ภายนอก / ชื่อเรื่อง...">
+                            </div>
                         </div>
                         <div class="col-md-3">
-                            <select name="type_id" class="form-select form-select-sm">
+                            <select id="type_id" class="form-select form-select-sm">
                                 <option value="">-- ทุกประเภท --</option>
                                 <?php while ($t = $types->fetch_assoc()): ?>
-                                    <option value="<?= $t['id'] ?>" <?= $f_type == $t['id'] ? 'selected' : '' ?>><?= $t['type_name'] ?></option>
+                                    <option value="<?= $t['id'] ?>"><?= $t['type_name'] ?></option>
                                 <?php endwhile; ?>
                             </select>
                         </div>
                         <div class="col-md-3">
-                            <select name="status" class="form-select form-select-sm">
+                            <select id="status" class="form-select form-select-sm">
                                 <option value="">-- ทุกสถานะ --</option>
-                                <option value="pending" <?= $f_status == 'pending' ? 'selected' : '' ?>>รอดำเนินการ</option>
-                                <option value="process" <?= $f_status == 'process' ? 'selected' : '' ?>>รับเรื่องแล้ว</option>
-                                <option value="success" <?= $f_status == 'success' ? 'selected' : '' ?>>เสร็จสิ้น</option>
-                                <option value="cancel" <?= $f_status == 'cancel' ? 'selected' : '' ?>>ยกเลิก</option>
+                                <option value="pending">รอดำเนินการ</option>
+                                <option value="process">รับเรื่องแล้ว</option>
+                                <option value="success">เสร็จสิ้น</option>
+                                <option value="cancel">ยกเลิก</option>
                             </select>
                         </div>
                         <div class="col-md-2 d-flex gap-1">
-                            <button type="submit" class="btn btn-sm btn-primary w-100">กรอง</button>
-                            <a href="dashboard.php" class="btn btn-sm btn-outline-secondary">ล้าง</a>
+                            <button type="button" class="btn btn-sm btn-primary w-100" onclick="loadDashboardData()">ค้นหา</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetFilter()">ล้าง</button>
                         </div>
                     </form>
                 </div>
 
                 <div class="card border-0 shadow-sm rounded-4">
-                    <div class="card-header bg-white border-0 pt-3">
+                    <div class="card-header bg-white border-0 pt-3 d-flex justify-content-between align-items-center">
                         <h6 class="fw-bold m-0"><i class="bi bi-list-ul me-2"></i>รายการเอกสารล่าสุด</h6>
+                        <small class="text-muted">แสดง 10 รายการล่าสุด</small>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
@@ -205,30 +311,13 @@ $types = $conn->query("SELECT * FROM document_types");
                                 <thead class="bg-light">
                                     <tr>
                                         <th class="ps-3" width="15%">เลขที่รับ</th>
-                                        <th width="45%">เรื่อง</th>
+                                        <th width="15%">เลขที่ภายนอก</th> <th width="35%">เรื่อง</th>
                                         <th class="text-center" width="15%">สถานะ</th>
-                                        <th class="text-center" width="25%">จัดการ</th>
+                                        <th class="text-center" width="20%">จัดการ</th>
                                     </tr>
                                 </thead>
-                                <tbody>
-                                    <?php while ($row = $recent_docs->fetch_assoc()): ?>
-                                        <tr>
-                                            <td class="ps-3 fw-bold text-primary"><?= $row['document_no'] ?></td>
-                                            <td><?= htmlspecialchars($row['title']) ?></td>
-                                            <td class="text-center">
-                                                <?php
-                                                $badges = ['pending' => 'bg-warning', 'process' => 'bg-info', 'success' => 'bg-success', 'cancel' => 'bg-danger'];
-                                                $texts = ['pending' => 'รอ', 'process' => 'รับเรื่อง', 'success' => 'เสร็จ', 'cancel' => 'ยกเลิก'];
-                                                ?>
-                                                <span class="badge rounded-pill <?= $badges[$row['status']] ?>"><?= $texts[$row['status']] ?></span>
-                                            </td>
-                                            <td class="text-center">
-                                                <a href="../users/view_details.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-outline-info rounded-pill px-3">
-                                                    <i class="bi bi-eye"></i> ดูรายละเอียด
-                                                </a>
-                                            </td>
-                                        </tr>
-                                    <?php endwhile; ?>
+                                <tbody id="recentDocsBody">
+                                    <tr><td colspan="5" class="text-center py-4">กำลังโหลดข้อมูล...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -239,65 +328,97 @@ $types = $conn->query("SELECT * FROM document_types");
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
     <script>
+        // ChartJS Setup
         const ctx = document.getElementById('mainChart').getContext('2d');
         new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: ['สถานะเอกสาร'],
-                datasets: [{
-                        label: 'ทั้งหมด',
-                        data: [<?= $total_docs ?>],
-                        backgroundColor: '#6366f1'
-                    },
-                    {
-                        label: 'รอรับ',
-                        data: [<?= $pending_docs ?>],
-                        backgroundColor: '#ffc107'
-                    },
-                    {
-                        label: 'กำลังทำ',
-                        data: [<?= $process_docs ?>],
-                        backgroundColor: '#0dcaf0'
-                    },
-                    {
-                        label: 'สำเร็จ',
-                        data: [<?= $success_docs ?>],
-                        backgroundColor: '#198754'
-                    },
-                    {
-                        label: 'ยกเลิก',
-                        data: [<?= $cancel_docs ?>],
-                        backgroundColor: '#dc3545'
-                    }
+                datasets: [
+                    { label: 'ทั้งหมด', data: [<?= $total_docs ?>], backgroundColor: '#6366f1' },
+                    { label: 'รอรับ', data: [<?= $pending_docs ?>], backgroundColor: '#ffc107' },
+                    { label: 'กำลังทำ', data: [<?= $process_docs ?>], backgroundColor: '#0dcaf0' },
+                    { label: 'สำเร็จ', data: [<?= $success_docs ?>], backgroundColor: '#198754' },
+                    { label: 'ยกเลิก', data: [<?= $cancel_docs ?>], backgroundColor: '#dc3545' }
                 ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: {
-                            boxWidth: 12,
-                            font: {
-                                size: 11
-                            }
-                        }
+                    legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
+                },
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+            }
+        });
+
+        // AJAX Dashboard Logic
+        let searchTimeout;
+
+        function loadDashboardData() {
+            let search = $('#search').val();
+            let type_id = $('#type_id').val();
+            let status = $('#status').val();
+
+            $.ajax({
+                url: 'dashboard.php',
+                type: 'POST',
+                data: {
+                    action: 'fetch_dashboard_data',
+                    search: search,
+                    type_id: type_id,
+                    status: status
+                },
+                success: function(response) {
+                    $('#recentDocsBody').html(response);
+
+                    // แจ้งเตือน SweetAlert หากค้นหาแล้วไม่เจอข้อมูล (เฉพาะกรณีที่มีการพิมพ์ค้นหา)
+                    if (response.includes('ไม่พบข้อมูลเอกสาร') && search !== '') {
+                        const Toast = Swal.mixin({
+                            toast: true,
+                            position: 'top-end',
+                            showConfirmButton: false,
+                            timer: 3000,
+                            timerProgressBar: true
+                        });
+                        Toast.fire({
+                            icon: 'info',
+                            title: 'ไม่พบเอกสารที่ระบุ'
+                        });
                     }
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            stepSize: 1
-                        }
-                    }
+                error: function() {
+                    console.error('Error fetching data');
                 }
-            }
+            });
+        }
+
+        function resetFilter() {
+            $('#search').val('');
+            $('#type_id').val('');
+            $('#status').val('');
+            loadDashboardData();
+        }
+
+        $(document).ready(function() {
+            // โหลดข้อมูลครั้งแรกทันที
+            loadDashboardData();
+
+            // Auto Search เมื่อพิมพ์ (Delay 500ms)
+            $('#search').on('keyup', function() {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(loadDashboardData, 500);
+            });
+
+            // Auto Filter เมื่อเลือก Dropdown
+            $('#type_id, #status').on('change', function() {
+                loadDashboardData();
+            });
         });
     </script>
 </body>
-
 </html>
