@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 08, 2026 at 06:06 AM
+-- Generation Time: Mar 03, 2026 at 07:52 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -157,8 +157,24 @@ CREATE TABLE `documents` (
   `file_path` varchar(255) DEFAULT NULL COMMENT 'ชื่อไฟล์แนบ',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `is_forwarded` tinyint(1) DEFAULT 0 COMMENT '0=รอส่ง, 1=ส่งแล้ว',
-  `parent_id` int(11) DEFAULT NULL COMMENT 'เก็บ ID เอกสารต้นทาง'
+  `parent_id` int(11) DEFAULT NULL COMMENT 'เก็บ ID เอกสารต้นทาง',
+  `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `documents`
+--
+
+INSERT INTO `documents` (`id`, `document_no`, `external_no`, `title`, `book_name`, `receive_date`, `sender_id`, `to_department_id`, `pending_target_depts`, `document_type_id`, `from_source`, `status`, `priority`, `remark`, `file_path`, `created_at`, `is_forwarded`, `parent_id`, `updated_at`) VALUES
+(109, '003/2569', 'asda', 'asdas', '', '2026-01-08', 24, 22, NULL, 1, 'asd', 'success', 0, '', '', '2026-01-08 11:33:04', 0, NULL, NULL),
+(110, '004/2569', '', 'ffff', '', '2026-01-08', 24, 22, NULL, 1, 'fffffff', NULL, 0, '', '', '2026-01-08 14:42:10', 0, NULL, NULL),
+(111, '005/2569', 'ทป001', 'สส', '', '2026-01-08', 24, 22, NULL, 1, 'สส', 'pending', 0, NULL, 'DOC_20260108_171008_695fd6e0608d3.sql', '2026-01-08 16:10:08', 0, NULL, NULL),
+(112, '006/2569', 'lk55', '5', '', '2026-01-08', 21, 2, NULL, 1, '5', 'success', 0, '', 'DOC_20260108_171511_695fd80f27796.jpg', '2026-01-08 16:15:11', 0, NULL, NULL),
+(113, '007/2569', 'หฟก', 'หฟก', '', '2026-01-08', 24, 22, NULL, 1, 'ฟหก', 'success', 0, '', 'DOC_20260108_172733_695fdaf5431b4.pdf', '2026-01-08 16:27:33', 0, NULL, NULL),
+(114, '008/2569', '111', 'ฟหก', '', '2026-01-08', 24, 22, NULL, 1, 'ฟหก', 'pending', 0, NULL, 'DOC_20260108_174434_695fdef2482e4.jpg', '2026-01-08 16:44:34', 0, NULL, NULL),
+(116, '009/2569', '666', 'ฟหยน่ฟหน่กนรฟห่กร่รหกีรเฟหีรเีรดก้ฟห้รก่ฟห่หกฟ่ยนห่ฟกดยน่ฟหนย่หกดยน่หกฟย่หกน่ฟย', '', '2026-01-08', 24, 22, NULL, 1, 'หฟกด', 'pending', 0, NULL, 'DOC_20260108_175020_695fe04c357e4.pdf', '2026-01-08 16:50:20', 0, NULL, NULL),
+(118, '011/2569', '', 'หหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหหห', '', '2026-01-08', 24, 22, NULL, 1, 'ก', 'pending', 0, NULL, 'DOC_20260108_175110_695fe07e80acb.jpg', '2026-01-08 16:51:10', 0, NULL, NULL),
+(119, '012/2569', '', 'หฟก', '', '2026-01-10', 24, NULL, NULL, 1, 'หฟก', 'draft', 0, NULL, '', '2026-01-10 14:51:02', 0, NULL, '2026-01-10 14:51:06');
 
 -- --------------------------------------------------------
 
@@ -465,7 +481,7 @@ ALTER TABLE `departments`
 -- AUTO_INCREMENT for table `documents`
 --
 ALTER TABLE `documents`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=107;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=120;
 
 --
 -- AUTO_INCREMENT for table `document_attachments`
@@ -489,7 +505,7 @@ ALTER TABLE `document_types`
 -- AUTO_INCREMENT for table `notifications`
 --
 ALTER TABLE `notifications`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=146;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=160;
 
 --
 -- AUTO_INCREMENT for table `permissions`
